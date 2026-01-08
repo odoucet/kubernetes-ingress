@@ -7,6 +7,7 @@ import (
 	"github.com/haproxytech/client-native/v6/models"
 
 	"github.com/haproxytech/kubernetes-ingress/pkg/haproxy/api"
+	"github.com/haproxytech/kubernetes-ingress/pkg/haproxy/maps"
 	"github.com/haproxytech/kubernetes-ingress/pkg/utils"
 )
 
@@ -14,6 +15,7 @@ type ReqRateLimit struct {
 	TableName      string
 	ReqsLimit      int64
 	DenyStatusCode int64
+	WhitelistMap   maps.Path
 }
 
 func (r ReqRateLimit) GetType() Type {
@@ -24,11 +26,16 @@ func (r ReqRateLimit) Create(client api.HAProxyClient, frontend *models.Frontend
 	if frontend.Mode == "tcp" {
 		return errors.New("request Track cannot be configured in TCP mode")
 	}
+	condTest := fmt.Sprintf("{ sc0_http_req_rate(%s) gt %d }", r.TableName, r.ReqsLimit)
+	// If a whitelist map is configured, only apply rate limiting if source IP is NOT in the whitelist
+	if r.WhitelistMap != "" {
+		condTest = fmt.Sprintf("%s !{ src -f %s }", condTest, r.WhitelistMap)
+	}
 	httpRule := models.HTTPRequestRule{
 		Type:       "deny",
 		DenyStatus: utils.PtrInt64(r.DenyStatusCode),
 		Cond:       "if",
-		CondTest:   fmt.Sprintf("{ sc0_http_req_rate(%s) gt %d }", r.TableName, r.ReqsLimit),
+		CondTest:   condTest,
 	}
 	return client.FrontendHTTPRequestRuleCreate(0, frontend.Name, httpRule, ingressACL)
 }

@@ -2,9 +2,12 @@ package ingress
 
 import (
 	"fmt"
+	"net"
 	"strconv"
+	"strings"
 
 	"github.com/haproxytech/kubernetes-ingress/pkg/annotations/common"
+	"github.com/haproxytech/kubernetes-ingress/pkg/haproxy/maps"
 	"github.com/haproxytech/kubernetes-ingress/pkg/haproxy/rules"
 	"github.com/haproxytech/kubernetes-ingress/pkg/store"
 	"github.com/haproxytech/kubernetes-ingress/pkg/utils"
@@ -14,6 +17,7 @@ type ReqRateLimit struct {
 	limit *rules.ReqRateLimit
 	track *rules.ReqTrack
 	rules *rules.List
+	maps  maps.Maps
 }
 
 type ReqRateLimitAnn struct {
@@ -21,8 +25,8 @@ type ReqRateLimitAnn struct {
 	name   string
 }
 
-func NewReqRateLimit(r *rules.List) *ReqRateLimit {
-	return &ReqRateLimit{rules: r}
+func NewReqRateLimit(r *rules.List, m maps.Maps) *ReqRateLimit {
+	return &ReqRateLimit{rules: r, maps: m}
 }
 
 func (p *ReqRateLimit) NewAnnotation(n string) ReqRateLimitAnn {
@@ -75,6 +79,30 @@ func (a ReqRateLimitAnn) Process(k store.K8s, annotations ...map[string]string) 
 		var value int64
 		value, err = utils.ParseInt(input)
 		a.parent.limit.DenyStatusCode = value
+	case "rate-limit-whitelist":
+		if a.parent.limit == nil {
+			return err
+		}
+		// Handle patterns/ prefix for map file references
+		if strings.HasPrefix(input, "patterns/") {
+			a.parent.limit.WhitelistMap = maps.Path(input)
+			return err
+		}
+
+		// Create a map for the whitelist
+		mapName := maps.Name("ratelimit-whitelist-" + utils.Hash([]byte(input)))
+		if !a.parent.maps.MapExists(mapName) {
+			for _, address := range strings.Split(input, ",") {
+				address = strings.TrimSpace(address)
+				if ip := net.ParseIP(address); ip == nil {
+					if _, _, err := net.ParseCIDR(address); err != nil {
+						return fmt.Errorf("incorrect address '%s' in %s annotation", address, a.name)
+					}
+				}
+				a.parent.maps.MapAppend(mapName, address)
+			}
+		}
+		a.parent.limit.WhitelistMap = maps.GetPath(mapName)
 	default:
 		err = fmt.Errorf("unknown rate-limit annotation '%s'", a.name)
 	}
