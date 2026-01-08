@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -57,7 +58,7 @@ func (a ReqRateLimitAnn) Process(k store.K8s, annotations ...map[string]string) 
 		a.parent.rules.Add(a.parent.track)
 	case "rate-limit-period":
 		if a.parent.limit == nil || a.parent.track == nil {
-			return err
+			return errors.New("rate-limit-period requires rate-limit-requests to be set")
 		}
 		var value *int64
 		value, err = utils.ParseTime(input)
@@ -67,21 +68,21 @@ func (a ReqRateLimitAnn) Process(k store.K8s, annotations ...map[string]string) 
 		a.parent.limit.TableName = tableName
 	case "rate-limit-size":
 		if a.parent.limit == nil || a.parent.track == nil {
-			return err
+			return errors.New("rate-limit-size requires rate-limit-requests to be set")
 		}
 		var value *int64
 		value, err = utils.ParseSize(input)
 		a.parent.track.TableSize = value
 	case "rate-limit-status-code":
 		if a.parent.limit == nil || a.parent.track == nil {
-			return err
+			return errors.New("rate-limit-status-code requires rate-limit-requests to be set")
 		}
 		var value int64
 		value, err = utils.ParseInt(input)
 		a.parent.limit.DenyStatusCode = value
 	case "rate-limit-whitelist":
-		if a.parent.limit == nil {
-			return err
+		if a.parent.limit == nil || a.parent.track == nil {
+			return errors.New("rate-limit-whitelist requires rate-limit-requests to be set")
 		}
 		// Handle patterns/ prefix for map file references
 		if strings.HasPrefix(input, "patterns/") {
