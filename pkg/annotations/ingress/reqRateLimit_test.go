@@ -25,6 +25,16 @@ import (
 	"github.com/haproxytech/kubernetes-ingress/pkg/store"
 )
 
+// TestReqRateLimit_Whitelist tests the rate-limit-whitelist annotation processing.
+// It validates that:
+// - Single IP addresses are correctly parsed and stored in a whitelist map
+// - CIDR ranges (e.g., 10.0.0.0/8) are correctly validated and stored
+// - Multiple IP addresses and CIDR ranges can be specified as comma-separated values
+// - Pattern file references (using "patterns/" prefix) are handled correctly without creating map entries
+// - The annotation fails with an error when rate-limit-requests is not configured first (dependency validation)
+// - Invalid IP addresses are rejected with appropriate error messages
+// - Invalid CIDR ranges (e.g., /33 prefix) are rejected with appropriate error messages
+// - Mixed valid and invalid entries in the whitelist are rejected entirely
 func TestReqRateLimit_Whitelist(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -160,6 +170,13 @@ func TestReqRateLimit_Whitelist(t *testing.T) {
 	}
 }
 
+// TestReqRateLimit_WhitelistWithPeriod tests the integration of rate-limit-whitelist with rate-limit-period.
+// It validates that:
+// - The whitelist annotation works correctly when combined with rate-limit-period
+// - The HAProxy stick-table name is generated correctly (e.g., "RateLimit-10000" for 10s period)
+// - All rate limit configuration fields are properly set (ReqsLimit, TableName, WhitelistMap)
+// - The track configuration is initialized correctly
+// - The whitelist map path is properly stored and accessible
 func TestReqRateLimit_WhitelistWithPeriod(t *testing.T) {
 	// Create mock maps
 	mockMaps, err := maps.New("/tmp/maps", nil)
@@ -192,6 +209,15 @@ func TestReqRateLimit_WhitelistWithPeriod(t *testing.T) {
 	assert.NotEmpty(t, reqRateLimit.limit.WhitelistMap)
 }
 
+// TestReqRateLimit_AllAnnotations tests the complete rate-limit annotation set with whitelist.
+// It validates that:
+// - All five rate-limit annotations work together correctly: requests, period, status-code, size, and whitelist
+// - Annotations are processed in the correct order with proper dependencies
+// - The rate limit configuration is complete: 1200 requests per 10s with custom 429 status code
+// - The stick-table size is configured correctly (200k entries)
+// - The whitelist with multiple entries (CIDR and IP) is properly stored
+// - All struct fields (limit, track, WhitelistMap, TableSize) are correctly initialized
+// This test validates a real-world scenario with all rate-limit features enabled.
 func TestReqRateLimit_AllAnnotations(t *testing.T) {
 	// Create mock maps
 	mockMaps, err := maps.New("/tmp/maps", nil)

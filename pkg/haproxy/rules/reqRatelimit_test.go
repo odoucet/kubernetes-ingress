@@ -22,6 +22,14 @@ import (
 	"github.com/haproxytech/kubernetes-ingress/pkg/haproxy/maps"
 )
 
+// TestReqRateLimit_ConditionGeneration tests the HAProxy condition string generation for rate limiting.
+// It validates that:
+// - Without a whitelist, the condition is a simple rate check: "{ sc0_http_req_rate(table) gt limit }"
+// - With a whitelist map, the condition includes IP exclusion: "({ rate_check }) !{ src -f whitelist_map }"
+// - Pattern file references (patterns/whitelist) are correctly included in the condition
+// - High rate limits (e.g., 5000 req/min) are handled correctly
+// - The WhitelistMap field is properly set and appears in the expected condition string
+// This test ensures the HAProxy ACL condition logic is correct for different whitelist scenarios.
 func TestReqRateLimit_ConditionGeneration(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -85,11 +93,22 @@ func TestReqRateLimit_ConditionGeneration(t *testing.T) {
 	}
 }
 
+// TestReqRateLimit_GetType tests that the ReqRateLimit rule returns the correct type identifier.
+// It validates that:
+// - The GetType() method returns REQ_RATELIMIT constant
+// - This ensures proper rule type identification in the HAProxy rules system
 func TestReqRateLimit_GetType(t *testing.T) {
 	r := ReqRateLimit{}
 	assert.Equal(t, REQ_RATELIMIT, r.GetType())
 }
 
+// TestReqRateLimit_WhitelistMapField tests the WhitelistMap field behavior in the ReqRateLimit struct.
+// It validates that:
+// - An empty WhitelistMap field is correctly identified as empty (no whitelist configured)
+// - A full map file path (e.g., "/etc/haproxy/maps/whitelist.map") is stored correctly
+// - A pattern file reference (e.g., "patterns/ips") is stored correctly
+// - The WhitelistMap field can be queried and compared for equality
+// This test ensures the WhitelistMap field works correctly in different scenarios.
 func TestReqRateLimit_WhitelistMapField(t *testing.T) {
 	tests := []struct {
 		name         string
