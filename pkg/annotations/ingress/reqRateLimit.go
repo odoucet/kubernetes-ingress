@@ -86,7 +86,7 @@ func (a ReqRateLimitAnn) Process(k store.K8s, annotations ...map[string]string) 
 		// Handle patterns/ prefix for map file references
 		if strings.HasPrefix(input, "patterns/") {
 			a.parent.limit.WhitelistMap = maps.Path(input)
-			return err
+			return nil
 		}
 
 		// Create a map for the whitelist

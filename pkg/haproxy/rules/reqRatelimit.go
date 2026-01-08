@@ -29,7 +29,7 @@ func (r ReqRateLimit) Create(client api.HAProxyClient, frontend *models.Frontend
 	condTest := fmt.Sprintf("{ sc0_http_req_rate(%s) gt %d }", r.TableName, r.ReqsLimit)
 	// If a whitelist map is configured, only apply rate limiting if source IP is NOT in the whitelist
 	if r.WhitelistMap != "" {
-		condTest = fmt.Sprintf("%s !{ src -f %s }", condTest, r.WhitelistMap)
+		condTest = fmt.Sprintf("(%s) !{ src -f %s }", condTest, r.WhitelistMap)
 	}
 	httpRule := models.HTTPRequestRule{
 		Type:       "deny",
