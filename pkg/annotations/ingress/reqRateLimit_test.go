@@ -27,10 +27,12 @@ import (
 
 // TestReqRateLimit_Whitelist tests the rate-limit-whitelist annotation processing.
 // It validates that:
-// - Single IP addresses are correctly parsed and stored in a whitelist map
-// - CIDR ranges (e.g., 10.0.0.0/8) are correctly validated and stored
+// - Single IP addresses are correctly parsed and stored directly (not in a map file)
+// - CIDR ranges (e.g., 10.0.0.0/8) are correctly validated and stored directly
 // - Multiple IP addresses and CIDR ranges can be specified as comma-separated values
-// - Pattern file references (using "patterns/" prefix) are handled correctly without creating map entries
+// - Single pattern file references (using "patterns/" prefix) are handled correctly
+// - Multiple pattern file references can be specified as comma-separated values
+// - Mixed IPs/CIDRs and pattern files are handled correctly (IPs stored separately from patterns)
 // - The annotation fails with an error when rate-limit-requests is not configured first (dependency validation)
 // - Invalid IP addresses are rejected with appropriate error messages
 // - Invalid CIDR ranges (e.g., /33 prefix) are rejected with appropriate error messages
@@ -76,15 +78,35 @@ func TestReqRateLimit_Whitelist(t *testing.T) {
 			wantMapEntries:   3,
 		},
 		{
-			name: "whitelist with patterns prefix",
+			name: "whitelist with single patterns prefix",
 			annotations: map[string]string{
 				"rate-limit-requests":  "100",
 				"rate-limit-whitelist": "patterns/whitelist",
 			},
 			wantErr:           false,
 			wantWhitelistMap:  true,
-			wantMapEntries:    0, // No map entries created for pattern files
+			wantMapEntries:    0, // No IP entries for pattern files
 			expectedWhitelist: "patterns/whitelist",
+		},
+		{
+			name: "whitelist with multiple patterns",
+			annotations: map[string]string{
+				"rate-limit-requests":  "100",
+				"rate-limit-whitelist": "patterns/whitelist1, patterns/whitelist2",
+			},
+			wantErr:          false,
+			wantWhitelistMap: true,
+			wantMapEntries:   0, // No IP entries for pattern files
+		},
+		{
+			name: "whitelist with mixed IPs and patterns",
+			annotations: map[string]string{
+				"rate-limit-requests":  "100",
+				"rate-limit-whitelist": "192.168.1.1, 10.0.0.0/8, patterns/whitelist1, patterns/whitelist2",
+			},
+			wantErr:          false,
+			wantWhitelistMap: true,
+			wantMapEntries:   2, // 2 IPs/CIDRs
 		},
 		{
 			name: "whitelist without rate-limit-requests",
@@ -155,15 +177,16 @@ func TestReqRateLimit_Whitelist(t *testing.T) {
 
 			if tt.wantWhitelistMap {
 				assert.NotNil(t, reqRateLimit.limit)
-				assert.NotEmpty(t, reqRateLimit.limit.WhitelistMap)
+
+				// Check IPs/CIDRs
+				if tt.wantMapEntries > 0 {
+					assert.Len(t, reqRateLimit.limit.WhitelistIPs, tt.wantMapEntries)
+				}
 
 				// Check if it's a pattern file reference
 				if tt.expectedWhitelist != "" {
-					assert.Equal(t, maps.Path(tt.expectedWhitelist), reqRateLimit.limit.WhitelistMap)
-				} else {
-					// For non-pattern files, the map should be created
-					// The map entries count is validated through mockMaps
-					assert.Contains(t, string(reqRateLimit.limit.WhitelistMap), "ratelimit-whitelist-")
+					assert.Len(t, reqRateLimit.limit.WhitelistMaps, 1)
+					assert.Equal(t, maps.Path(tt.expectedWhitelist), reqRateLimit.limit.WhitelistMaps[0])
 				}
 			}
 		})
@@ -206,7 +229,8 @@ func TestReqRateLimit_WhitelistWithPeriod(t *testing.T) {
 	assert.NotNil(t, reqRateLimit.track)
 	assert.Equal(t, int64(100), reqRateLimit.limit.ReqsLimit)
 	assert.Equal(t, "RateLimit-10000", reqRateLimit.limit.TableName)
-	assert.NotEmpty(t, reqRateLimit.limit.WhitelistMap)
+	assert.Len(t, reqRateLimit.limit.WhitelistIPs, 1)
+	assert.Equal(t, "192.168.1.0/24", reqRateLimit.limit.WhitelistIPs[0])
 }
 
 // TestReqRateLimit_AllAnnotations tests the complete rate-limit annotation set with whitelist.
@@ -258,6 +282,8 @@ func TestReqRateLimit_AllAnnotations(t *testing.T) {
 	assert.Equal(t, int64(1200), reqRateLimit.limit.ReqsLimit)
 	assert.Equal(t, int64(429), reqRateLimit.limit.DenyStatusCode)
 	assert.Equal(t, "RateLimit-10000", reqRateLimit.limit.TableName)
-	assert.NotEmpty(t, reqRateLimit.limit.WhitelistMap)
+	assert.Len(t, reqRateLimit.limit.WhitelistIPs, 2)
+	assert.Contains(t, reqRateLimit.limit.WhitelistIPs, "10.0.0.0/8")
+	assert.Contains(t, reqRateLimit.limit.WhitelistIPs, "192.168.1.100")
 	assert.NotNil(t, reqRateLimit.track.TableSize)
 }

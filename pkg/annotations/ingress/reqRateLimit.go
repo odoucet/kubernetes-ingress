@@ -84,26 +84,40 @@ func (a ReqRateLimitAnn) Process(k store.K8s, annotations ...map[string]string) 
 		if a.parent.limit == nil || a.parent.track == nil {
 			return errors.New("rate-limit-whitelist requires rate-limit-requests to be set")
 		}
-		// Handle patterns/ prefix for map file references
-		if strings.HasPrefix(input, "patterns/") {
-			a.parent.limit.WhitelistMap = maps.Path(input)
-			return nil
-		}
 
-		// Create a map for the whitelist
-		mapName := maps.Name("ratelimit-whitelist-" + utils.Hash([]byte(input)))
-		if !a.parent.maps.MapExists(mapName) {
-			for _, address := range strings.Split(input, ",") {
-				address = strings.TrimSpace(address)
-				if ip := net.ParseIP(address); ip == nil {
-					if _, _, err := net.ParseCIDR(address); err != nil {
-						return fmt.Errorf("incorrect address '%s' in %s annotation", address, a.name)
+		// Parse the input - can be:
+		// 1. Comma-separated IPs/CIDRs
+		// 2. One or more pattern file references (patterns/file1, patterns/file2)
+		// 3. Mix of both
+
+		var ips []string
+		var patterns []maps.Path
+
+		for _, entry := range strings.Split(input, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+
+			// Check if it's a pattern file reference
+			if strings.HasPrefix(entry, "patterns/") {
+				patterns = append(patterns, maps.Path(entry))
+			} else {
+				// Validate it's a valid IP or CIDR
+				if ip := net.ParseIP(entry); ip == nil {
+					if _, _, err := net.ParseCIDR(entry); err != nil {
+						return fmt.Errorf("incorrect address '%s' in %s annotation", entry, a.name)
 					}
 				}
-				a.parent.maps.MapAppend(mapName, address)
+				ips = append(ips, entry)
 			}
 		}
-		a.parent.limit.WhitelistMap = maps.GetPath(mapName)
+
+		// Store IPs/CIDRs directly in the rule
+		a.parent.limit.WhitelistIPs = ips
+
+		// Store pattern file references
+		a.parent.limit.WhitelistMaps = patterns
 	default:
 		err = fmt.Errorf("unknown rate-limit annotation '%s'", a.name)
 	}

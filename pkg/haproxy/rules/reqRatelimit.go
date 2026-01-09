@@ -3,6 +3,7 @@ package rules
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/haproxytech/client-native/v6/models"
 
@@ -15,7 +16,8 @@ type ReqRateLimit struct {
 	TableName      string
 	ReqsLimit      int64
 	DenyStatusCode int64
-	WhitelistMap   maps.Path
+	WhitelistIPs   []string    // Direct IPs and CIDRs
+	WhitelistMaps  []maps.Path // Pattern file references
 }
 
 func (r ReqRateLimit) GetType() Type {
@@ -27,10 +29,27 @@ func (r ReqRateLimit) Create(client api.HAProxyClient, frontend *models.Frontend
 		return errors.New("request Track cannot be configured in TCP mode")
 	}
 	condTest := fmt.Sprintf("{ sc0_http_req_rate(%s) gt %d }", r.TableName, r.ReqsLimit)
-	// If a whitelist map is configured, only apply rate limiting if source IP is NOT in the whitelist
-	if r.WhitelistMap != "" {
-		condTest = fmt.Sprintf("(%s) !{ src -f %s }", condTest, r.WhitelistMap)
+
+	// Build whitelist conditions if configured
+	// If whitelist is set, only apply rate limiting if source IP is NOT in the whitelist
+	if len(r.WhitelistIPs) > 0 || len(r.WhitelistMaps) > 0 {
+		var whitelistConditions []string
+
+		// Add direct IP/CIDR condition
+		if len(r.WhitelistIPs) > 0 {
+			whitelistConditions = append(whitelistConditions,
+				fmt.Sprintf("!{ src %s }", strings.Join(r.WhitelistIPs, " ")))
+		}
+
+		// Add pattern file conditions
+		for _, mapPath := range r.WhitelistMaps {
+			whitelistConditions = append(whitelistConditions,
+				fmt.Sprintf("!{ src -f %s }", mapPath))
+		}
+
+		condTest = fmt.Sprintf("(%s) %s", condTest, strings.Join(whitelistConditions, " "))
 	}
+
 	httpRule := models.HTTPRequestRule{
 		Type:       "deny",
 		DenyStatus: utils.PtrInt64(r.DenyStatusCode),
