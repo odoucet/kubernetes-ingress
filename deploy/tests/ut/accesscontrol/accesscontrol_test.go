@@ -49,12 +49,12 @@ func (suite *AccessControlSuite) TestSrcIPHeaderWithAllowList() {
 	})
 
 	suite.Run("deny rule is present", func() {
-		suite.Contains(cfg, "http-request deny deny-status 403", "expected http-request deny rule for allow-list annotation")
+		suite.Contains(cfg, "http-request deny deny_status 403", "expected http-request deny rule for allow-list annotation")
 	})
 
 	suite.Run("set-src rule appears before deny rule", func() {
 		setSrcIdx := strings.Index(cfg, "http-request set-src hdr(X-Client-IP)")
-		denyIdx := strings.Index(cfg, "http-request deny deny-status 403")
+		denyIdx := strings.Index(cfg, "http-request deny deny_status 403")
 
 		suite.Require().Greater(setSrcIdx, -1, "http-request set-src rule not found")
 		suite.Require().Greater(denyIdx, -1, "http-request deny rule not found")
@@ -87,12 +87,12 @@ func (suite *AccessControlSuite) TestSrcIPHeaderWithDenyList() {
 	})
 
 	suite.Run("deny rule is present", func() {
-		suite.Contains(cfg, "http-request deny deny-status 403", "expected http-request deny rule for deny-list annotation")
+		suite.Contains(cfg, "http-request deny deny_status 403", "expected http-request deny rule for deny-list annotation")
 	})
 
 	suite.Run("set-src rule appears before deny rule", func() {
 		setSrcIdx := strings.Index(cfg, "http-request set-src hdr(X-Forwarded-For)")
-		denyIdx := strings.Index(cfg, "http-request deny deny-status 403")
+		denyIdx := strings.Index(cfg, "http-request deny deny_status 403")
 
 		suite.Require().Greater(setSrcIdx, -1, "http-request set-src rule not found")
 		suite.Require().Greater(denyIdx, -1, "http-request deny rule not found")

@@ -16,6 +16,7 @@ package accesscontrol
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/haproxytech/kubernetes-ingress/pkg/annotations"
@@ -27,7 +28,7 @@ import (
 	"github.com/haproxytech/kubernetes-ingress/pkg/store"
 	"github.com/haproxytech/kubernetes-ingress/pkg/utils"
 	"github.com/jessevdk/go-flags"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -42,7 +43,8 @@ func (m *FakeUpdateStatusManager) Update(k store.K8s, h haproxy.HAProxy, a annot
 
 type AccessControlSuite struct {
 	suite.Suite
-	test Test
+	test         Test
+	haproxyBytes []byte // loaded once before any controller changes the CWD
 }
 
 func TestAccessControl(t *testing.T) {
@@ -52,6 +54,16 @@ func TestAccessControl(t *testing.T) {
 type Test struct {
 	Controller *c.HAProxyController
 	TempDir    string
+}
+
+// SetupSuite reads the initial HAProxy configuration file once, before any
+// controller calls os.Chdir and changes the working directory.
+func (suite *AccessControlSuite) SetupSuite() {
+	cwd, err := os.Getwd()
+	require.NoError(suite.T(), err, "could not get working directory")
+	cfgPath := filepath.Join(cwd, "../../../../fs/usr/local/etc/haproxy/haproxy.cfg")
+	suite.haproxyBytes, err = os.ReadFile(cfgPath)
+	require.NoError(suite.T(), err, "could not read haproxy.cfg from %s", cfgPath)
 }
 
 func (suite *AccessControlSuite) BeforeTest(suiteName, testName string) {
@@ -89,15 +101,10 @@ func (suite *AccessControlSuite) UseAccessControlFixture(ingressAnnotations map[
 			BackSSL:    "ssl-backend",
 		},
 	}
-	haproxyConfig, err := os.ReadFile("../../../../fs/usr/local/etc/haproxy/haproxy.cfg")
-	if err != nil {
-		//nolint:testifylint
-		assert.Failf(suite.T(), "error in opening init haproxy configuration file", err.Error())
-	}
 
 	eventChan = make(chan k8ssync.SyncDataEvent, watch.DefaultChanSize*6)
 	controller := c.NewBuilder().
-		WithHaproxyCfgFile(haproxyConfig).
+		WithHaproxyCfgFile(suite.haproxyBytes).
 		WithEventChan(eventChan).
 		WithStore(s).
 		WithHaproxyEnv(haproxyEnv).
@@ -177,3 +184,4 @@ func (suite *AccessControlSuite) UseAccessControlFixture(ingressAnnotations map[
 	<-controllerHasWorked
 	return eventChan
 }
+
