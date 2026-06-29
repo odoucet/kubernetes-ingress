@@ -156,15 +156,11 @@ func (r SectionRules) refreshRule(client api.HAProxyClient, ruleType Type, i int
 	// Create HAProxy Rule
 	ingressACL := ""
 	if frontendRuleSet.meta[id].ingress {
-		// Use "-m sub" (substring) instead of "-m dom" (domain/suffix) so that
-		// a rule's ID is matched correctly even when it is not the last component
-		// of txn.path_match (which has the form "backendName.id1.id2.…").
-		// "-m dom id1" only matches if id1 is the rightmost dot-delimited segment,
-		// so intermediate rule IDs (e.g. set-src when combined with allow-list)
-		// would never be matched. "-m sub id1" matches whenever id1 appears anywhere
-		// in the string, which is safe because rule IDs are 32-char FNV-128a hex
-		// strings that cannot appear as substrings of backend names or other rule IDs.
-		ingressACL = fmt.Sprintf("{ var(%s) -m sub %s }", aclVar, id)
+		// Use "-m reg" to match a dot-delimited RuleID anywhere inside txn.path_match
+		// (which has the form "backendName.id1.id2.…"). This fixes cases where the
+		// rule ID is not the rightmost segment (so "-m dom" would not match), while
+		// avoiding accidental matches against the backend name.
+		ingressACL = fmt.Sprintf("{ var(%s) -m reg (^|\\.)%s(\\.|$) }", aclVar, id)
 	}
 	err := rules[i].Create(client, frontend, ingressACL)
 	if err != nil {
