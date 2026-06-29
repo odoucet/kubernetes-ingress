@@ -91,14 +91,23 @@ func (suite *AccessControlSuite) TestSrcIPHeaderWithDenyList() {
 	})
 
 	suite.Run("set-src rule appears before deny rule", func() {
-		setSrcIdx := strings.Index(cfg, "http-request set-src hdr(X-Forwarded-For)")
-		denyIdx := strings.Index(cfg, "http-request deny deny_status 403")
-
-		suite.Require().Greater(setSrcIdx, -1, "http-request set-src rule not found")
-		suite.Require().Greater(denyIdx, -1, "http-request deny rule not found")
-
-		suite.Less(setSrcIdx, denyIdx,
-			"http-request set-src must appear before http-request deny so that the "+
-				"deny-list check uses the IP from the src-ip-header, not the TCP source address")
+		checked := 0
+		for _, section := range strings.Split(cfg, "frontend ") {
+			if !strings.HasPrefix(section, "http ") && !strings.HasPrefix(section, "https ") {
+				continue
+			}
+			if !strings.Contains(section, "http-request deny deny_status 403") {
+				continue
+			}
+			checked++
+			setSrcIdx := strings.Index(section, "http-request set-src hdr(X-Forwarded-For)")
+			denyIdx := strings.Index(section, "http-request deny deny_status 403")
+			suite.Require().Greater(setSrcIdx, -1, "http-request set-src rule not found in frontend")
+			suite.Require().Greater(denyIdx, -1, "http-request deny rule not found in frontend")
+			suite.Less(setSrcIdx, denyIdx,
+				"http-request set-src must appear before http-request deny so that the "+
+					"deny-list check uses the IP from the src-ip-header, not the TCP source address")
+		}
+		suite.Require().Greater(checked, 0, "no relevant frontend section with deny rule found")
 	})
 }
